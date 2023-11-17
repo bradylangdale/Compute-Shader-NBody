@@ -55,17 +55,17 @@ int main(void)
     unsigned int brushSize = 8;
 
     // Game of Life logic compute shader
-    char *golLogicCode = LoadFileText("resources/shaders/glsl430/gol.glsl");
+    char *golLogicCode = LoadFileText("resources/shaders/glsl430/gol.comp");
     unsigned int golLogicShader = rlCompileShader(golLogicCode, RL_COMPUTE_SHADER);
     unsigned int golLogicProgram = rlLoadComputeShaderProgram(golLogicShader);
     UnloadFileText(golLogicCode);
 
     // Game of Life logic render shader
-    Shader golRenderShader = LoadShader(NULL, "resources/shaders/glsl430/gol_render.glsl");
+    Shader golRenderShader = LoadShader(NULL, "resources/shaders/glsl430/gol_render.comp");
     int resUniformLoc = GetShaderLocation(golRenderShader, "resolution");
 
     // Game of Life transfert shader (CPU<->GPU download and upload)
-    char *golTransfertCode = LoadFileText("resources/shaders/glsl430/gol_transfert.glsl");
+    char *golTransfertCode = LoadFileText("resources/shaders/glsl430/gol_transfert.comp");
     unsigned int golTransfertShader = rlCompileShader(golTransfertCode, RL_COMPUTE_SHADER);
     unsigned int golTransfertProgram = rlLoadComputeShaderProgram(golTransfertShader);
     UnloadFileText(golTransfertCode);

@@ -20,7 +20,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(raylib)
 
 # Our Project
-add_executable(${PROJECT_NAME} core_basic_window.c)
+add_executable(${PROJECT_NAME} nbody.c)
 target_link_libraries(${PROJECT_NAME} raylib)
 
 # Web Configurations
