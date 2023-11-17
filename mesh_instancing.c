@@ -28,7 +28,7 @@
     #define GLSL_VERSION            100
 #endif
 
-#define MAX_INSTANCES  1000
+#define MAX_INSTANCES  4
 
 //------------------------------------------------------------------------------------
 // Program main entry point

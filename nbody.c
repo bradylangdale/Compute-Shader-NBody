@@ -13,7 +13,6 @@
 *
 ********************************************************************************************/
 
-
 #include "raylib.h"
 #include "raymath.h"
 #include "rlgl.h"
@@ -23,8 +22,9 @@
 
 #include <stdlib.h>         // Required for: calloc(), free()
 
-#define MAX_INSTANCES  2048
-
+#define NUM_X 50
+#define NUM_Y 50
+#define NUM_BODIES 4096
 //------------------------------------------------------------------------------------
 // Program main entry point
 //------------------------------------------------------------------------------------
@@ -32,21 +32,83 @@ int main(void)
 {
     // Initialization
     //--------------------------------------------------------------------------------------
-    const int screenWidth = 768;
-    const int screenHeight = 768;
+    const int screenWidth = 900;
+    const int screenHeight = 900;
 
-    InitWindow(screenWidth, screenHeight, "raylib testing");
+    InitWindow(screenWidth, screenHeight, "nbody testing");
 
     // Define the camera to look into our 3d world
     Camera camera = { 0 };
-    camera.position = (Vector3){ -125.0f, 125.0f, -125.0f };    // Camera position
+    camera.position = (Vector3){ -250.0f, 250.0f, -250.0f };    // Camera position
     camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };              // Camera looking at point
     camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };                  // Camera up vector (rotation towards target)
-    camera.fovy = 45.0f;                                        // Camera field-of-view Y
+    camera.fovy = 60.0f;                                        // Camera field-of-view Y
     camera.projection = CAMERA_PERSPECTIVE;                     // Camera projection type
+
+    // Nbody Struct
+    typedef struct Nbody
+    {
+        float px;
+        float py;
+        float pz;
+        float vx;
+        float vy;
+        float vz;
+    } Nbody;
+
+    // compute shader
+    char *nbodyCode = LoadFileText("resources/shaders/glsl430/nbody.comp");
+    unsigned int nbodyShader = rlCompileShader(nbodyCode, RL_COMPUTE_SHADER);
+    unsigned int nbodyProgram = rlLoadComputeShaderProgram(nbodyShader);
+    UnloadFileText(nbodyCode);
+
+    // Define transforms to be uploaded to GPU for instances
+    Matrix *display_trans = (Matrix *)RL_CALLOC(NUM_BODIES, sizeof(Matrix));   // Pre-multiplied transformations passed to rlgl
+
+    // Load shader storage buffer object (SSBO), id returned
+    unsigned int nbodiesA = rlLoadShaderBuffer(NUM_BODIES*sizeof(Nbody), NULL, RL_DYNAMIC_COPY);
+    unsigned int nbodiesB = rlLoadShaderBuffer(NUM_BODIES*sizeof(Nbody), NULL, RL_DYNAMIC_COPY);
+    unsigned int transforms = rlLoadShaderBuffer(NUM_BODIES*sizeof(Matrix), NULL, RL_DYNAMIC_COPY);
+
+    Nbody init_bodies[NUM_BODIES];
+
+    for (int i = 0; i < NUM_BODIES; i++)
+    {
+        init_bodies[i].px = (float)GetRandomValue(-250, 250);
+        init_bodies[i].py = (float)GetRandomValue(-250, 250);
+        init_bodies[i].pz = (float)GetRandomValue(-250, 250);
+
+        init_bodies[i].vx = (float)GetRandomValue(-25, 25);
+        init_bodies[i].vy = (float)GetRandomValue(-25, 25);
+        init_bodies[i].vz = (float)GetRandomValue(-25, 25);
+    }
+
+    rlUpdateShaderBuffer(nbodiesA, &init_bodies, NUM_BODIES*sizeof(Nbody), 0);
 
     // Define mesh to be instanced
     Mesh cube = GenMeshCube(1.0f, 1.0f, 1.0f);
+
+    //--------------------------------------------------------------------------------------
+    // Load lighting shader
+    Shader shader = LoadShader(TextFormat("resources/shaders/glsl%i/lighting_instancing.vs", 430),
+                               TextFormat("resources/shaders/glsl%i/lighting.fs", 430));
+    // Get shader locations
+    shader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(shader, "mvp");
+    shader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(shader, "viewPos");
+    shader.locs[SHADER_LOC_MATRIX_MODEL] = GetShaderLocationAttrib(shader, "instanceTransform");
+
+    // Set shader value: ambient light level
+    int ambientLoc = GetShaderLocation(shader, "ambient");
+    SetShaderValue(shader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+
+    // Create one light
+    CreateLight(LIGHT_DIRECTIONAL, (Vector3){ 50.0f, 50.0f, 0.0f }, Vector3Zero(), WHITE, shader);
+
+    // NOTE: We are assigning the intancing shader to material.shader
+    // to be used on mesh drawing with DrawMeshInstanced()
+    Material matInstances = LoadMaterialDefault();
+    matInstances.shader = shader;
+    matInstances.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
 
     // Load default material (using raylib internal default shader) for non-instanced mesh drawing
     // WARNING: Default shader enables vertex color attribute BUT GenMeshCube() does not generate vertex colors, so,
@@ -54,88 +116,53 @@ int main(void)
     Material matDefault = LoadMaterialDefault();
     matDefault.maps[MATERIAL_MAP_DIFFUSE].color = BLUE;
 
-    // compute shader
-    char *testCode = LoadFileText("resources/shaders/glsl430/test.comp");
-    unsigned int testShader = rlCompileShader(testCode, RL_COMPUTE_SHADER);
-    unsigned int testProgram = rlLoadComputeShaderProgram(testShader);
-    UnloadFileText(testCode);
-
-    // render shader
-    const Vector2 resolution = { 768, 768 };
-    Shader testRenderShader = LoadShader(NULL, "resources/shaders/glsl430/test_render.fs");
-    int resUniformLoc = GetShaderLocation(testRenderShader, "resolution");
-
-    // Load shader storage buffer object (SSBO), id returned
-    unsigned int ssboA = rlLoadShaderBuffer(768*768*sizeof(Vector3), NULL, RL_DYNAMIC_COPY);
-    unsigned int ssboB = rlLoadShaderBuffer(768*768*sizeof(Vector3), NULL, RL_DYNAMIC_COPY);
-    unsigned int ssboC = rlLoadShaderBuffer(sizeof(unsigned int), NULL, RL_DYNAMIC_COPY);
-
-    int dir = -2;
-    unsigned int testValue[1];
-    testValue[0] = 0;
-    rlUpdateShaderBuffer(ssboC, &testValue, sizeof(testValue), 0);
-    
-
-    // Create a white texture of the size of the window to update
-    // each pixel of the window using the fragment shader: golRenderShader
-    Image whiteImage = GenImageColor(768, 768, WHITE);
-    Texture whiteTex = LoadTextureFromImage(whiteImage);
-    UnloadImage(whiteImage);
-    //--------------------------------------------------------------------------------------
-
-
     SetTargetFPS(144);                   // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
-
+    UpdateCamera(&camera, CAMERA_ORBITAL);
     // Main game loop
     while (!WindowShouldClose())        // Detect window close button or ESC key
     {
         // Update
         //----------------------------------------------------------------------------------
-        UpdateCamera(&camera, CAMERA_ORBITAL);
+
 
         // Update the light shader with the camera view position
         float cameraPos[3] = { camera.position.x, camera.position.y, camera.position.z };
+        SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
+
+        // Process nbody
+        rlEnableShader(nbodyProgram);
+        rlBindShaderBuffer(nbodiesA, 0);
+        rlBindShaderBuffer(nbodiesB, 1);
+        rlBindShaderBuffer(transforms, 2);
+        rlComputeShaderDispatch(16, 16, 16);
+        rlDisableShader();
+
+        // ssboA <-> ssboB
+        unsigned int temp = nbodiesA;
+        nbodiesA = nbodiesB;
+        nbodiesB = temp;
+
+        rlReadShaderBuffer(transforms, display_trans, NUM_BODIES*sizeof(Matrix), 0);
         
         //----------------------------------------------------------------------------------
         // Draw
         //----------------------------------------------------------------------------------
         BeginDrawing();
 
-            ClearBackground(RAYWHITE);
+            ClearBackground(BLACK);
 
-            // Process game of life logic
-            rlEnableShader(testProgram);
-            rlBindShaderBuffer(ssboA, 1);
-            rlBindShaderBuffer(ssboB, 2);
-            rlBindShaderBuffer(ssboC, 3);
-            rlComputeShaderDispatch(768/16, 768/16, 1);
-            rlDisableShader();
-
-            testValue[0] += dir;
-            //if (testValue[0] >= 768)
-            //    dir *= -1;
-
-            rlUpdateShaderBuffer(ssboC, &testValue, sizeof(testValue), 0);
-
-            // ssboA <-> ssboB
-            int temp = ssboA;
-            ssboA = ssboB;
-            ssboB = temp;
-
-            rlBindShaderBuffer(ssboA, 1);
-            SetShaderValue(testRenderShader, resUniformLoc, &resolution, SHADER_UNIFORM_VEC2);
-
-            BeginShaderMode(testRenderShader);
-                DrawTexture(whiteTex, 0, 0, WHITE);
-            EndShaderMode();
-
-            /*BeginMode3D(camera);
+            BeginMode3D(camera);
 
                 // Draw cube mesh with default material (BLUE)
-                DrawMesh(cube, matDefault, MatrixTranslate(-10.0f, 0.0f, 0.0f));
+                //DrawMesh(cube, matDefault, MatrixTranslate(-10.0f, 0.0f, 0.0f));
+                
+                // Draw meshes instanced using material containing instancing shader (RED + lighting),
+                // transforms[] for the instances should be provided, they are dynamically
+                // updated in GPU every frame, so we can animate the different mesh instances
+                DrawMeshInstanced(cube, matInstances, display_trans, NUM_BODIES);
 
-            EndMode3D();*/
+            EndMode3D();
 
             DrawFPS(10, 10);
 
@@ -145,15 +172,13 @@ int main(void)
 
     // De-Initialization
     // Unload shader buffers objects
-    rlUnloadShaderBuffer(ssboA);
-    rlUnloadShaderBuffer(ssboB);
-    rlUnloadShaderBuffer(ssboC);
+    rlUnloadShaderBuffer(nbodiesA);
+    rlUnloadShaderBuffer(nbodiesB);
+    rlUnloadShaderBuffer(transforms);
 
     // Unload compute shader programs
-    rlUnloadShaderProgram(testProgram);
-
-    UnloadTexture(whiteTex);            // Unload white texture
-    UnloadShader(testRenderShader);      // Unload rendering fragment shader
+    rlUnloadShaderProgram(nbodyProgram);
+    RL_FREE(display_trans);    // Free transforms
 
     CloseWindow();          // Close window and OpenGL context
     //--------------------------------------------------------------------------------------

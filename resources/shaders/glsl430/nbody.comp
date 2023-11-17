@@ -1,0 +1,79 @@
+#version 430
+
+#define NUM_BODIES 4096
+
+struct nbody
+{
+    float px;
+    float py;
+    float pz;
+    float vx;
+    float vy;
+    float vz;
+};
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly restrict buffer nbodyLayout {
+    nbody nbodies[];
+};
+
+layout(std430, binding = 1) writeonly restrict buffer nbodyLayout2 {
+    nbody nbodiesDest[];
+};
+
+layout(std430, binding = 2) writeonly restrict buffer nbodyLayout3 {
+    mat4 transforms[];
+};
+
+void main() {
+    //uint clusterSize = gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z;
+    //uvec3 linearizeInvocation = uvec3(1, clusterSize, clusterSize * clusterSize);
+    //uint local_id = (gl_LocalInvocationID.x + 32 * gl_LocalInvocationID.y + 1024 * gl_LocalInvocationID.z);
+    uint id = (gl_GlobalInvocationID.x + 16 * gl_GlobalInvocationID.y + 256 * gl_GlobalInvocationID.z);//uint(dot(gl_GlobalInvocationID, linearizeInvocation));
+
+    nbody newBody = nbodies[id];
+
+    for (uint i = 0; i < NUM_BODIES; i++)
+    {
+        if (id != i)
+        {
+            nbody otherBody = nbodies[i];
+
+            vec3 unit = normalize(vec3(
+                newBody.px - otherBody.px,
+                newBody.py - otherBody.py,
+                newBody.pz - otherBody.pz
+            ));
+
+            float dist = distance(vec3(
+                newBody.px,
+                newBody.py,
+                newBody.pz
+            ), vec3(
+                otherBody.px,
+                otherBody.py,
+                otherBody.pz
+            ));
+
+            if (dist < 0.25f) dist = 0.25f;
+
+            vec3 grav = unit / pow(dist, 2);
+
+            newBody.vx -= grav.x;
+            newBody.vy -= grav.y;
+            newBody.vz -= grav.z;
+        }
+    }
+
+    newBody.px += newBody.vx * 0.001f;
+    newBody.py += newBody.vy * 0.001f;
+    newBody.pz += newBody.vz * 0.001f;
+    nbodiesDest[id] = newBody;
+
+    transforms[id] = mat4(
+        vec4( 1.0f, 0.0f, 0.0f, nbodies[id].px),
+        vec4( 0.0f, 1.0f, 0.0f, nbodies[id].py),
+        vec4( 0.0f, 0.0f, 1.0f, nbodies[id].pz),
+        vec4( 0.0f, 0.0f, 0.0f, 1.0f ));
+}
