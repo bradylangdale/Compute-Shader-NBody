@@ -42,7 +42,7 @@ int main(void)
 
     // Define the camera to look into our 3d world
     Camera camera = { 0 };
-    camera.position = (Vector3){ 0.0f, 600.0f, 0.0f };    // Camera position
+    camera.position = (Vector3){ 100.0f, 100.0f, 0.0f };    // Camera position
     camera.target = (Vector3){ 1.0f, 0.0f, 1.0f };              // Camera looking at point
     camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };                  // Camera up vector (rotation towards target)
     camera.fovy = 45.0f;                                        // Camera field-of-view Y
@@ -83,18 +83,18 @@ int main(void)
     for (int i = 0; i < NUM_BODIES; i++)
     {
         init_bodies[i].px = (float)GetRandomValue(-10000, 10000) / 40.0f;
-        init_bodies[i].py = 0;//(float)GetRandomValue(-10000, 10000) / 1000.0f;
+        init_bodies[i].py = (float)GetRandomValue(-10000, 10000) / 100.0f;
         init_bodies[i].pz = (float)GetRandomValue(-10000, 10000) / 40.0f;
         
         float dist = sqrt(pow(init_bodies[i].px, 2) + pow(init_bodies[i].py, 2) + pow(init_bodies[i].pz, 2));
         float mag = -0.1f * dist;
 
-        if ((float)GetRandomValue(-5, 5) != 6)
+        if ((float)GetRandomValue(-5, 5) > 0)
         {
             init_bodies[i].vx = mag * (-init_bodies[i].pz / dist);
-            init_bodies[i].vy = 0.0f;//(float)GetRandomValue(-50, 50);
+            init_bodies[i].vy = 0;//(float)GetRandomValue(-50, 50);
         } else {
-            init_bodies[i].vx = 0.0f;//(float)GetRandomValue(-50, 50);
+            init_bodies[i].vx = 0;//(float)GetRandomValue(-50, 50);
             init_bodies[i].vy = mag * (-init_bodies[i].pz / dist);
         }
         
@@ -195,9 +195,9 @@ int main(void)
 
         float dist = sqrtf(pow(dir.x, 2) + pow(dir.y, 2) + pow(dir.z, 2));
 
-        camera.position.x += (dir.x / dist) * (800.0f - dist);
-        camera.position.y += (dir.y / dist) * (800.0f - dist);
-        camera.position.z += (dir.z / dist) * (800.0f - dist);
+        camera.position.x += (dir.x / dist) * (500.0f - dist);
+        camera.position.y += (dir.y / dist) * (500.0f - dist);
+        camera.position.z += (dir.z / dist) * (500.0f - dist);
 
         // Update the light shader with the camera view position
         float cameraPos[3] = { camera.position.x, camera.position.y, camera.position.z };
