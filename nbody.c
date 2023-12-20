@@ -14,6 +14,9 @@
 ********************************************************************************************/
 
 #include "raylib.h"
+
+#include "rcamera.h"
+
 #include "raymath.h"
 #include "rlgl.h"
 
@@ -32,17 +35,17 @@ int main(void)
 {
     // Initialization
     //--------------------------------------------------------------------------------------
-    const int screenWidth = 900;
-    const int screenHeight = 900;
+    const int screenWidth = 1820;
+    const int screenHeight = 920;
 
     InitWindow(screenWidth, screenHeight, "nbody testing");
 
     // Define the camera to look into our 3d world
     Camera camera = { 0 };
-    camera.position = (Vector3){ -250.0f, 250.0f, -250.0f };    // Camera position
-    camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };              // Camera looking at point
+    camera.position = (Vector3){ 0.0f, 600.0f, 0.0f };    // Camera position
+    camera.target = (Vector3){ 1.0f, 0.0f, 1.0f };              // Camera looking at point
     camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };                  // Camera up vector (rotation towards target)
-    camera.fovy = 60.0f;                                        // Camera field-of-view Y
+    camera.fovy = 45.0f;                                        // Camera field-of-view Y
     camera.projection = CAMERA_PERSPECTIVE;                     // Camera projection type
 
     // Nbody Struct
@@ -62,6 +65,11 @@ int main(void)
     unsigned int nbodyProgram = rlLoadComputeShaderProgram(nbodyShader);
     UnloadFileText(nbodyCode);
 
+    //char *collisionCode = LoadFileText("resources/shaders/glsl430/collision.comp");
+    //unsigned int collisionShader = rlCompileShader(collisionCode, RL_COMPUTE_SHADER);
+    //unsigned int collisionProgram = rlLoadComputeShaderProgram(collisionShader);
+    //UnloadFileText(collisionCode);
+
     // Define transforms to be uploaded to GPU for instances
     Matrix *display_trans = (Matrix *)RL_CALLOC(NUM_BODIES, sizeof(Matrix));   // Pre-multiplied transformations passed to rlgl
 
@@ -74,19 +82,30 @@ int main(void)
 
     for (int i = 0; i < NUM_BODIES; i++)
     {
-        init_bodies[i].px = (float)GetRandomValue(-250, 250);
-        init_bodies[i].py = (float)GetRandomValue(-250, 250);
-        init_bodies[i].pz = (float)GetRandomValue(-250, 250);
+        init_bodies[i].px = (float)GetRandomValue(-10000, 10000) / 40.0f;
+        init_bodies[i].py = 0;//(float)GetRandomValue(-10000, 10000) / 1000.0f;
+        init_bodies[i].pz = (float)GetRandomValue(-10000, 10000) / 40.0f;
+        
+        float dist = sqrt(pow(init_bodies[i].px, 2) + pow(init_bodies[i].py, 2) + pow(init_bodies[i].pz, 2));
+        float mag = -0.1f * dist;
 
-        init_bodies[i].vx = (float)GetRandomValue(-25, 25);
-        init_bodies[i].vy = (float)GetRandomValue(-25, 25);
-        init_bodies[i].vz = (float)GetRandomValue(-25, 25);
+        if ((float)GetRandomValue(-5, 5) != 6)
+        {
+            init_bodies[i].vx = mag * (-init_bodies[i].pz / dist);
+            init_bodies[i].vy = 0.0f;//(float)GetRandomValue(-50, 50);
+        } else {
+            init_bodies[i].vx = 0.0f;//(float)GetRandomValue(-50, 50);
+            init_bodies[i].vy = mag * (-init_bodies[i].pz / dist);
+        }
+        
+        
+        init_bodies[i].vz = mag * (init_bodies[i].px / dist);
     }
 
     rlUpdateShaderBuffer(nbodiesA, &init_bodies, NUM_BODIES*sizeof(Nbody), 0);
 
     // Define mesh to be instanced
-    Mesh cube = GenMeshCube(1.0f, 1.0f, 1.0f);
+    Mesh cube = GenMeshSphere(1.0f, 8, 16);
 
     //--------------------------------------------------------------------------------------
     // Load lighting shader
@@ -116,19 +135,26 @@ int main(void)
     Material matDefault = LoadMaterialDefault();
     matDefault.maps[MATERIAL_MAP_DIFFUSE].color = BLUE;
 
-    SetTargetFPS(144);                   // Set our game to run at 60 frames-per-second
+    SetTargetFPS(33);                   // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
-    UpdateCamera(&camera, CAMERA_ORBITAL);
+    
     // Main game loop
     while (!WindowShouldClose())        // Detect window close button or ESC key
     {
         // Update
         //----------------------------------------------------------------------------------
 
+        // Process collisions
+        //rlEnableShader(collisionProgram);
+        //rlBindShaderBuffer(nbodiesA, 0);
+        //rlBindShaderBuffer(nbodiesB, 1);
+        //rlComputeShaderDispatch(16, 16, 16);
+        //rlDisableShader();
 
-        // Update the light shader with the camera view position
-        float cameraPos[3] = { camera.position.x, camera.position.y, camera.position.z };
-        SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
+        // ssboA <-> ssboB
+        //unsigned int temp = nbodiesA;
+        //nbodiesA = nbodiesB;
+        //nbodiesB = temp;
 
         // Process nbody
         rlEnableShader(nbodyProgram);
@@ -145,6 +171,38 @@ int main(void)
 
         rlReadShaderBuffer(transforms, display_trans, NUM_BODIES*sizeof(Matrix), 0);
         
+        Vector3 pos = (Vector3){ 0.0f, 0.0f, 0.0f };
+        for (int i = 0; i < NUM_BODIES; i++)
+        {
+            pos.x = display_trans[i].m12;
+            pos.y = display_trans[i].m13;
+            pos.z = display_trans[i].m14;
+        }
+
+        pos.x /= NUM_BODIES;
+        pos.y /= NUM_BODIES;
+        pos.z /= NUM_BODIES;
+
+        camera.target = pos;
+        
+        UpdateCamera(&camera, CAMERA_ORBITAL);
+
+        Vector3 dir = (Vector3) {
+            (camera.position.x - pos.x),
+            (camera.position.y - pos.y),
+            (camera.position.z - pos.z)
+        };
+
+        float dist = sqrtf(pow(dir.x, 2) + pow(dir.y, 2) + pow(dir.z, 2));
+
+        camera.position.x += (dir.x / dist) * (800.0f - dist);
+        camera.position.y += (dir.y / dist) * (800.0f - dist);
+        camera.position.z += (dir.z / dist) * (800.0f - dist);
+
+        // Update the light shader with the camera view position
+        float cameraPos[3] = { camera.position.x, camera.position.y, camera.position.z };
+        SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
+
         //----------------------------------------------------------------------------------
         // Draw
         //----------------------------------------------------------------------------------
@@ -178,6 +236,7 @@ int main(void)
 
     // Unload compute shader programs
     rlUnloadShaderProgram(nbodyProgram);
+    //rlUnloadShaderProgram(collisionCode);
     RL_FREE(display_trans);    // Free transforms
 
     CloseWindow();          // Close window and OpenGL context

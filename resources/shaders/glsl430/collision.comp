@@ -23,15 +23,8 @@ layout(std430, binding = 1) writeonly restrict buffer nbodyLayout2 {
     nbody nbodiesDest[];
 };
 
-layout(std430, binding = 2) writeonly restrict buffer nbodyLayout3 {
-    mat4 transforms[];
-};
-
 void main() {
-    //uint clusterSize = gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z;
-    //uvec3 linearizeInvocation = uvec3(1, clusterSize, clusterSize * clusterSize);
-    //uint local_id = (gl_LocalInvocationID.x + 32 * gl_LocalInvocationID.y + 1024 * gl_LocalInvocationID.z);
-    uint id = (gl_GlobalInvocationID.x + 16 * gl_GlobalInvocationID.y + 256 * gl_GlobalInvocationID.z);//uint(dot(gl_GlobalInvocationID, linearizeInvocation));
+    uint id = (gl_GlobalInvocationID.x + 16 * gl_GlobalInvocationID.y + 256 * gl_GlobalInvocationID.z);
 
     nbody newBody = nbodies[id];
 
@@ -51,16 +44,14 @@ void main() {
                 otherBody.pz
             ));
 
-            if (dist < 0.001f) continue;
-
-            vec3 unit = normalize(vec3(
-                newBody.px - otherBody.px,
-                newBody.py - otherBody.py,
-                newBody.pz - otherBody.pz
-            ));
-
             if (dist < (2.0f * RADIUS))
-            {
+            {   
+                vec3 unit = normalize(vec3(
+                    newBody.px - otherBody.px,
+                    newBody.py - otherBody.py,
+                    newBody.pz - otherBody.pz
+                ));
+
                 float depth = (((2.0f * RADIUS) - dist) / 1.99f);
                 newBody.px += unit.x * depth;
                 newBody.py += unit.y * depth;
@@ -69,32 +60,14 @@ void main() {
                 float b1Vel = dot(vec3(newBody.vx, newBody.vy, newBody.vz), unit);
                 float b2Vel = dot(vec3(otherBody.vx, otherBody.vy, otherBody.vz), unit);
 
-                float result = (b1Vel - b2Vel) / (1.08f);
+                float result = (b1Vel + b2Vel) / 2.0f;
 
                 newBody.vx -= unit.x * result;
                 newBody.vy -= unit.y * result;
                 newBody.vz -= unit.z * result;
-            } else {
-                vec3 grav = unit / pow(dist, 2);
-
-                newBody.vx -= grav.x;
-                newBody.vy -= grav.y;
-                newBody.vz -= grav.z;
             }
         }
     }
 
-    newBody.px += newBody.vx * 0.008f;
-    newBody.py += newBody.vy * 0.008f;
-    newBody.pz += newBody.vz * 0.008f;
-    newBody.vx *= 0.998f;
-    newBody.vy *= 0.998f;
-    newBody.vz *= 0.998f;
     nbodiesDest[id] = newBody;
-
-    transforms[id] = mat4(
-        vec4( 1.0f, 0.0f, 0.0f, nbodies[id].px),
-        vec4( 0.0f, 1.0f, 0.0f, nbodies[id].py),
-        vec4( 0.0f, 0.0f, 1.0f, nbodies[id].pz),
-        vec4( 0.0f, 0.0f, 0.0f, 1.0f ));
 }
